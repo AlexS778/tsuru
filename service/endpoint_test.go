@@ -355,7 +355,7 @@ func (s *S) TestDestroyShouldSendADELETERequestToTheResourceURL(c *check.C) {
 	h := TestHandler{}
 	ts := httptest.NewServer(&h)
 	defer ts.Close()
-	instance := ServiceInstance{Name: "his-redis", ServiceName: "redis"}
+	instance := ServiceInstance{Name: "his-redis", ServiceName: "redis", TeamOwner: "team-owner"}
 	client := &endpointClient{endpoint: ts.URL, username: "user", password: "abcde"}
 	evt := createEvt(c)
 	err := client.Destroy(context.TODO(), &instance, evt, "")
@@ -365,6 +365,13 @@ func (s *S) TestDestroyShouldSendADELETERequestToTheResourceURL(c *check.C) {
 	c.Assert(h.url, check.Equals, "/resources/"+instance.Name)
 	c.Assert(h.method, check.Equals, http.MethodDelete)
 	c.Assert("Basic dXNlcjphYmNkZQ==", check.Equals, h.request.Header.Get("Authorization"))
+	v, err := url.ParseQuery(string(h.body))
+	c.Assert(err, check.IsNil)
+	c.Assert(map[string][]string(v), check.DeepEquals, map[string][]string{
+		"user":    {"my@user"},
+		"eventid": {evt.UniqueID.Hex()},
+		"team":    {"team-owner"},
+	})
 }
 
 func (s *S) TestDestroyShouldReturnErrorIfTheRequestFails(c *check.C) {
@@ -382,7 +389,7 @@ func (s *S) TestDestroyWithTokenOwner(c *check.C) {
 	h := TestHandler{}
 	ts := httptest.NewServer(&h)
 	defer ts.Close()
-	instance := ServiceInstance{Name: "his-redis", ServiceName: "redis"}
+	instance := ServiceInstance{Name: "his-redis", ServiceName: "redis", TeamOwner: "team-owner"}
 	client := &endpointClient{endpoint: ts.URL, username: "user", password: "abcde"}
 	evt := createEvtWithTokenOwner(c)
 	err := client.Destroy(context.TODO(), &instance, evt, "")
@@ -392,6 +399,7 @@ func (s *S) TestDestroyWithTokenOwner(c *check.C) {
 	v, err := url.ParseQuery(string(h.body))
 	c.Assert(err, check.IsNil)
 	c.Assert(v.Get("user"), check.Equals, "my-team-token@tsuru-team-token")
+	c.Assert(v.Get("team"), check.Equals, "team-owner")
 	c.Assert(h.request.Header.Get("X-Tsuru-User"), check.Equals, "my-team-token@tsuru-team-token")
 }
 
@@ -408,7 +416,7 @@ func (s *S) TestDestroyNotFound(c *check.C) {
 }
 
 func (s *S) TestBindAppEndpointDown(c *check.C) {
-	instance := ServiceInstance{Name: "her-redis", ServiceName: "redis"}
+	instance := ServiceInstance{Name: "her-redis", ServiceName: "redis", TeamOwner: "team-owner"}
 	a := provisiontest.NewFakeApp("her-app", "python", 1)
 	client := &endpointClient{endpoint: "http://localhost:1234", username: "user", password: "abcde"}
 	evt := createEvt(c)
@@ -431,7 +439,7 @@ func (s *S) TestBindAppShouldSendAPOSTToTheResourceURL(c *check.C) {
 			Addresses:   []string{"https://kubernetes.example.com", "https://backup.kubernetes.example.com"},
 		}, nil
 	}
-	instance := ServiceInstance{Name: "her-redis", ServiceName: "redis"}
+	instance := ServiceInstance{Name: "her-redis", ServiceName: "redis", TeamOwner: "team-owner"}
 	a := provisiontest.NewFakeAppWithPool("her-app", "python", "her-pool", 1)
 	client := &endpointClient{endpoint: ts.URL, username: "user", password: "abcde"}
 	evt := createEvt(c)
@@ -455,6 +463,7 @@ func (s *S) TestBindAppShouldSendAPOSTToTheResourceURL(c *check.C) {
 		"app-cluster-addresses":   {"https://kubernetes.example.com", "https://backup.kubernetes.example.com"},
 		"user":                    {"my@user"},
 		"eventid":                 {evt.UniqueID.Hex()},
+		"parameters.team":         {"team-owner"},
 	}
 	c.Assert(map[string][]string(v), check.DeepEquals, expected)
 }
@@ -466,7 +475,7 @@ func (s *S) TestBindAppWithParams(c *check.C) {
 	s.mockService.Pool.OnFindByName = func(name string) (*provTypes.Pool, error) {
 		return &provTypes.Pool{Name: "her-pool", Provisioner: "kubernetes"}, nil
 	}
-	instance := ServiceInstance{Name: "her-redis", ServiceName: "redis"}
+	instance := ServiceInstance{Name: "her-redis", ServiceName: "redis", TeamOwner: "team-owner"}
 	a := provisiontest.NewFakeAppWithPool("her-app", "python", "her-pool", 1)
 	s.mockService.App.OnGetInternalBindableAddresses = func(app *appTypes.App) ([]string, error) {
 		return []string{
@@ -502,6 +511,7 @@ func (s *S) TestBindAppWithParams(c *check.C) {
 		"eventid":                {evt.UniqueID.Hex()},
 		"parameters.p1":          {"v1"},
 		"parameters.p2.complex1": {"complexvalue1"},
+		"parameters.team":        {"team-owner"},
 	}
 	c.Assert(map[string][]string(v), check.DeepEquals, expected)
 }
@@ -720,7 +730,7 @@ func (s *S) TestUnbindApp(c *check.C) {
 	h := TestHandler{}
 	ts := httptest.NewServer(&h)
 	defer ts.Close()
-	instance := ServiceInstance{Name: "heaven-can-wait", ServiceName: "heaven"}
+	instance := ServiceInstance{Name: "heaven-can-wait", ServiceName: "heaven", TeamOwner: "team-owner"}
 	a := provisiontest.NewFakeApp("arch-enemy", "python", 1)
 	client := &endpointClient{endpoint: ts.URL, username: "user", password: "abcde"}
 	evt := createEvt(c)
@@ -739,6 +749,7 @@ func (s *S) TestUnbindApp(c *check.C) {
 		"app-hosts": {"arch-enemy.fakerouter.com"},
 		"user":      {"my@user"},
 		"eventid":   {evt.UniqueID.Hex()},
+		"team":      {"team-owner"},
 	}
 	c.Assert(map[string][]string(v), check.DeepEquals, expected)
 }
@@ -855,13 +866,15 @@ func (s *S) TestStatus(c *check.C) {
 	}
 	var request int
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c.Check(r.URL.Path, check.Equals, "/resources/my-redis/status")
+		c.Check(r.URL.Query().Get("team"), check.Equals, "team-owner")
 		w.WriteHeader(tests[request].Input)
 		w.Write([]byte("working"))
 		request++
 	})
 	ts := httptest.NewServer(h)
 	defer ts.Close()
-	instance := ServiceInstance{Name: "my-redis", ServiceName: "redis"}
+	instance := ServiceInstance{Name: "my-redis", ServiceName: "redis", TeamOwner: "team-owner"}
 	client := &endpointClient{endpoint: ts.URL, username: "user", password: "abcde"}
 	for _, t := range tests {
 		state, err := client.Status(context.TODO(), &instance, "")
@@ -874,7 +887,7 @@ func (s *S) TestInfo(c *check.C) {
 	h := infoHandler{}
 	ts := httptest.NewServer(&h)
 	defer ts.Close()
-	instance := ServiceInstance{Name: "my-redis", ServiceName: "redis"}
+	instance := ServiceInstance{Name: "my-redis", ServiceName: "redis", TeamOwner: "team-owner"}
 	client := &endpointClient{endpoint: ts.URL, username: "user", password: "abcde"}
 	result, err := client.Info(context.TODO(), &instance, "")
 	c.Assert(err, check.IsNil)
@@ -884,6 +897,7 @@ func (s *S) TestInfo(c *check.C) {
 	}
 	c.Assert(result, check.DeepEquals, expected)
 	c.Assert(h.r.URL.Path, check.Equals, "/resources/my-redis")
+	c.Assert(h.r.URL.Query().Get("team"), check.Equals, "team-owner")
 	c.Assert("Basic dXNlcjphYmNkZQ==", check.Equals, h.r.Header.Get("Authorization"))
 }
 

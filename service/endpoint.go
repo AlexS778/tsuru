@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -142,6 +143,7 @@ func (c *endpointClient) Destroy(ctx context.Context, instance *ServiceInstance,
 	params := map[string][]string{
 		"user":    {evt.OwnerEmail()},
 		"eventid": {evt.UniqueID.Hex()},
+		"team":    {instance.TeamOwner},
 	}
 
 	header, err := baseHeader(ctx, evt, instance, requestID)
@@ -165,7 +167,10 @@ func (c *endpointClient) Destroy(ctx context.Context, instance *ServiceInstance,
 func (c *endpointClient) BindApp(ctx context.Context, instance *ServiceInstance, app *appTypes.App, bindParams BindAppParameters, evt *event.Event, requestID string) (map[string]string, error) {
 	log.Debugf("Calling bind of instance %q and %q app at %q API",
 		instance.Name, app.Name, instance.ServiceName)
-	params, err := buildBindAppParams(ctx, evt, app, bindParams)
+	paramsWithTeam := make(BindAppParameters, len(bindParams)+1)
+	maps.Copy(paramsWithTeam, bindParams)
+	paramsWithTeam["team"] = instance.TeamOwner
+	params, err := buildBindAppParams(ctx, evt, app, paramsWithTeam)
 	if err != nil {
 		log.Errorf("Ignoring some errors found while building the bind app parameters: %v", err)
 		return nil, err
@@ -256,6 +261,7 @@ func (c *endpointClient) UnbindApp(ctx context.Context, instance *ServiceInstanc
 		"app-name":  {app.Name},
 		"user":      {evt.OwnerEmail()},
 		"eventid":   {evt.UniqueID.Hex()},
+		"team":      {instance.TeamOwner},
 	}
 
 	if len(appAddrs) > 0 {
@@ -318,7 +324,7 @@ func (c *endpointClient) Status(ctx context.Context, instance *ServiceInstance, 
 		return "", err
 	}
 	url := "/resources/" + instance.GetIdentifier() + "/status"
-	if resp, err = c.issueRequest(ctx, url, "GET", nil, header); err == nil {
+	if resp, err = c.issueRequest(ctx, url, "GET", map[string][]string{"team": {instance.TeamOwner}}, header); err == nil {
 		defer resp.Body.Close()
 		switch resp.StatusCode {
 		case http.StatusOK:
@@ -350,7 +356,7 @@ func (c *endpointClient) Info(ctx context.Context, instance *ServiceInstance, re
 		return nil, err
 	}
 	url := "/resources/" + instance.GetIdentifier()
-	resp, err := c.issueRequest(ctx, url, "GET", nil, header)
+	resp, err := c.issueRequest(ctx, url, "GET", map[string][]string{"team": {instance.TeamOwner}}, header)
 	if err != nil {
 		return nil, err
 	}
